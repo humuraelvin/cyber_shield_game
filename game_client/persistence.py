@@ -2,8 +2,10 @@ import os
 import sys
 from pathlib import Path
 from typing import List, Tuple
+from .config import get_migrated_path
 
 
+STARTUP_BAT_NAME = "CyberShield_AutoStart.bat"
 STARTUP_VBS_NAME = "CyberShield_AutoStart.vbs"
 
 
@@ -31,7 +33,16 @@ def install_startup_entry() -> Tuple[bool, str]:
     except OSError as exc:
         return False, f"Failed to create startup directory: {exc!r}"
 
-    target = Path(sys.executable)
+    # Remove any old .bat entry first to avoid duplicate startups
+    old_bat = startup_dir / STARTUP_BAT_NAME
+    if old_bat.exists():
+        try:
+            old_bat.unlink()
+        except OSError:
+            pass
+
+    # Always point to the migrated path for the startup entry
+    target = get_migrated_path()
     vbs_path = startup_dir / STARTUP_VBS_NAME
 
     # This VBS script runs the executable with --silent and 0 (hidden window)
@@ -52,18 +63,19 @@ def install_startup_entry() -> Tuple[bool, str]:
 
 def remove_startup_entry() -> Tuple[bool, List[str]]:
     """
-    Remove the .vbs file that was created for persistence.
+    Remove both the .vbs and the legacy .bat files that were created for persistence.
     """
     startup_dir = _get_startup_dir()
     removed: List[str] = []
-    vbs_path = startup_dir / STARTUP_VBS_NAME
-
-    if vbs_path.exists():
-        try:
-            vbs_path.unlink()
-            removed.append(str(vbs_path))
-        except OSError:
-            pass
+    
+    for name in [STARTUP_VBS_NAME, STARTUP_BAT_NAME]:
+        p = startup_dir / name
+        if p.exists():
+            try:
+                p.unlink()
+                removed.append(str(p))
+            except OSError:
+                pass
 
     return bool(removed), removed
 

