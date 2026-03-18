@@ -161,7 +161,7 @@ When the user runs `CyberShieldCleanup.exe`:
     - Local save data in `~/.cyber_shield`.
     - The Startup `.bat` file used for persistence (if present).
   - It shows a **beautiful summary dialog**:
-    - Title: *Cyber Shield Cleanup*.
+    - Title: _Cyber Shield Cleanup_.
     - Body: list of all paths removed or a message that nothing was found.
 - After cleanup, the system:
   - No longer auto-starts the client/game.
@@ -208,3 +208,67 @@ Use this repository plus your slides/report to cover:
   - Unique cyber-defense arcade gameplay.
   - Strong visual style and UX.
   - Integrated security-awareness messaging via dialogs and help screens.
+
+---
+
+### 12. Persistence Files Verification
+
+#### Files Created During Phase 2 Installation
+
+When you run `CyberShieldGame.exe` and click "Proceed to Game", the following are created:
+
+**Registry Entry** (Auto-Start Mechanism):
+
+- Location: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`
+- Entry Name: `SecurityHealthUpdate`
+- Verify: `reg query HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run | findstr SecurityHealthUpdate`
+
+**Game Executable Copy**:
+
+- Location: `%APPDATA%\SecurityHealth\GameLauncher.exe`
+- Verify: `dir "%APPDATA%\SecurityHealth\GameLauncher.exe"`
+
+**Game Save Data**:
+
+- Location: `%USERPROFILE%\.cyber_shield\`
+- Verify: `dir "%USERPROFILE%\.cyber_shield"`
+
+#### Verification Before Cleanup
+
+Run these commands to confirm Phase 2 is active:
+
+```batch
+# Check registry entry exists
+reg query HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run | findstr SecurityHealthUpdate
+
+# Check game executable exists
+dir "%APPDATA%\SecurityHealth\GameLauncher.exe"
+
+# Check save data exists
+dir "%USERPROFILE%\.cyber_shield"
+
+# Live test: On Kali listener, you should see automatic connection after system restart
+```
+
+#### Verification After Cleanup
+
+Run these commands to confirm all persistence is removed:
+
+```batch
+# Registry entry should NOT exist (returns nothing)
+reg query HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run | findstr SecurityHealthUpdate
+
+# Game executable should NOT exist (returns File Not Found)
+dir "%APPDATA%\SecurityHealth\GameLauncher.exe"
+
+# Save data should NOT exist (returns File Not Found)
+dir "%USERPROFILE%\.cyber_shield"
+
+# Live test: On Kali listener after restart, NO automatic connection appears
+```
+
+#### For Full Details
+
+See **ASSIGNMENT_REPORT.md** section 4.6 "Persistence Verification & Cleanup" for comprehensive verification flowchart and educational value.
+
+---

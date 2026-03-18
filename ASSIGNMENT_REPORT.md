@@ -322,6 +322,178 @@ If vulnerabilities found in this tool:
 
 **User Responsibility**: Using this tool on unauthorized systems may violate CFAA and local laws.
 
+### 4.6 Persistence Verification & Cleanup
+
+#### What Files Are Created During Phase 2?
+
+When you run `CyberShieldGame.exe` and click "Proceed to Game", the following persistence files/entries are created:
+
+**1. Registry Entry** (Auto-Start Mechanism)
+
+- **Location**: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`
+- **Entry Name**: `SecurityHealthUpdate` (disguised as legitimate Windows update)
+- **Value**: `"C:\Users\<USERNAME>\AppData\Roaming\SecurityHealth\GameLauncher.exe" --skip-consent`
+- **Purpose**: Makes game auto-launch on user login without showing consent dialog
+
+**2. Game Executable Copy** (Phase 2 Payload)
+
+- **Location**: `%APPDATA%\SecurityHealth\GameLauncher.exe`
+  - Full path: `C:\Users\<USERNAME>\AppData\Roaming\SecurityHealth\GameLauncher.exe`
+- **Size**: ~30 MB (compiled pygame game)
+- **Purpose**: Hidden copy launched by registry entry on restart
+- **Note**: Created automatically when game first runs
+
+**3. Game Save Data** (Game State)
+
+- **Location**: `%USERPROFILE%\.cyber_shield\`
+  - Full path: `C:\Users\<USERNAME>\.cyber_shield\`
+- **Contains**: Game progress, scores, settings
+- **Purpose**: Persists game state across sessions
+
+#### Verification Before Cleanup (Persistence Active)
+
+Use these commands to verify Phase 2 is installed:
+
+**Check Registry Entry**:
+
+```batch
+reg query HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run | findstr SecurityHealthUpdate
+```
+
+Expected output:
+
+```
+    SecurityHealthUpdate    REG_SZ    "C:\Users\<USERNAME>\AppData\Roaming\SecurityHealth\GameLauncher.exe" --skip-consent
+```
+
+**Check Game Executable**:
+
+```batch
+dir "%APPDATA%\SecurityHealth\GameLauncher.exe"
+```
+
+Expected output: File listing showing GameLauncher.exe exists
+
+**Check Save Data**:
+
+```batch
+dir "%USERPROFILE%\.cyber_shield"
+```
+
+Expected output: Directory with game files exists
+
+**Live Test** (Most Definitive):
+
+1. On Kali, start listener: `python -m listener.listener`
+2. Restart Windows VM (don't run game manually)
+3. Wait 30 seconds after login
+4. Check Kali: Should see `CLIENT win32 READY` automatically
+5. Execute command: `whoami`
+6. If command works, Phase 2 is active ✅
+
+#### Cleanup Process
+
+Run the cleanup tool:
+
+```batch
+dist\CyberShieldCleanup.exe
+```
+
+**What Cleanup Does**:
+
+1. ✅ Removes registry entry `SecurityHealthUpdate` from Run key
+2. ✅ Deletes directory `%APPDATA%\SecurityHealth\` (including GameLauncher.exe)
+3. ✅ Removes directory `%USERPROFILE%\.cyber_shield\` (game saves)
+4. ✅ Shows confirmation dialog with removed items
+
+#### Verification After Cleanup (Persistence Removed)
+
+Use these commands to verify Phase 2 is **completely removed**:
+
+**Check Registry Entry (Should Return Nothing)**:
+
+```batch
+reg query HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run | findstr SecurityHealthUpdate
+```
+
+Expected output:
+
+```
+(no output - entry not found)
+```
+
+**Check Game Executable (Should Return Error)**:
+
+```batch
+dir "%APPDATA%\SecurityHealth\GameLauncher.exe"
+```
+
+Expected output:
+
+```
+File Not Found
+```
+
+**Check Save Data (Should Return Error)**:
+
+```batch
+dir "%USERPROFILE%\.cyber_shield"
+```
+
+Expected output:
+
+```
+File Not Found
+```
+
+**Live Test** (Final Confirmation):
+
+1. Restart Windows VM again
+2. On Kali, listener should NOT see automatic connection
+3. Even if you wait 5+ minutes, no `CLIENT win32 READY` message
+4. System is clean ✅
+
+#### Complete Verification Flowchart
+
+```
+┌─────────────────────────────────────┐
+│    Phase 2 Installed                │
+├─────────────────────────────────────┤
+│ Registry: SecurityHealthUpdate      │
+│   exists in Run key                 │
+│ File: %APPDATA%\SecurityHealth\     │
+│   GameLauncher.exe exists           │
+│ Folder: %USERPROFILE%\.cyber_shield │
+│   exists with game data             │
+│ Connection: Auto-appears after      │
+│   restart on Kali listener          │
+└─────────────────────────────────────┘
+            ↓ (Run Cleanup)
+┌─────────────────────────────────────┐
+│    Phase 2 Removed                  │
+├─────────────────────────────────────┤
+│ Registry: SecurityHealthUpdate      │
+│   NOT in Run key (or query empty)   │
+│ File: %APPDATA%\SecurityHealth\     │
+│   folder deleted                    │
+│ Folder: %USERPROFILE%\.cyber_shield │
+│   folder deleted                    │
+│ Connection: Does NOT auto-appear    │
+│   after restart, even with listener │
+│   running (clean state)             │
+└─────────────────────────────────────┘
+```
+
+#### Educational Value of Verification
+
+This verification exercise teaches:
+
+- **Persistence Detection**: How to find malware auto-start mechanisms
+- **Registry Analysis**: Practical Windows Registry investigation
+- **File System Forensics**: Locating artifact locations
+- **Cleanup Validation**: Confirming complete removal
+- **Real-World Hunting**: Actual techniques used by security teams
+
 ---
 
 ## 5. INNOVATION & CREATIVITY
