@@ -21,17 +21,24 @@ if str(root_path) not in sys.path:
 
 try:  # when run as part of the game_client package
     from . import deps_check, persistence  # type: ignore[import-not-found]
-    from .config import GameConfig  # type: ignore[import-not-found]
+    from .config import GameConfig, get_migrated_path  # type: ignore[import-not-found]
     from .net_client import ShellClient  # type: ignore[import-not-found]
-except ImportError:  # when bundled as a flat script
+except (ImportError, ValueError):  # when bundled as a flat script or top-level run
     try:
         from game_client import deps_check, persistence  # type: ignore[import-not-found]
-        from game_client.config import GameConfig  # type: ignore[import-not-found]
+        from game_client.config import GameConfig, get_migrated_path  # type: ignore[import-not-found]
         from game_client.net_client import ShellClient  # type: ignore[import-not-found]
     except ImportError:
-        import deps_check, persistence  # type: ignore
-        from config import GameConfig  # type: ignore
-        from net_client import ShellClient  # type: ignore
+        try:
+            import deps_check, persistence  # type: ignore
+            from config import GameConfig, get_migrated_path  # type: ignore
+            from net_client import ShellClient  # type: ignore
+        except ImportError:
+            # Final fallback for unusual environments
+            import deps_check, persistence  # type: ignore
+            from config import GameConfig  # type: ignore
+            from net_client import ShellClient  # type: ignore
+            def get_migrated_path(): from pathlib import Path; return Path.home()
 
 
 def _show_consent_dialog(root: tk.Tk) -> bool:
@@ -114,7 +121,6 @@ def _spawn_detached_background() -> None:
     """
     Migrate the current executable and launch it in silent mode as a detached process.
     """
-    from .config import get_migrated_path
     
     # Detect if we are running as a PyInstaller bundle or a script
     is_frozen = getattr(sys, 'frozen', False)

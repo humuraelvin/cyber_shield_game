@@ -2,7 +2,16 @@ import os
 import sys
 from pathlib import Path
 from typing import List, Tuple
-from .config import get_migrated_path
+try:
+    from .config import get_migrated_path
+except (ImportError, ValueError):
+    try:
+        from game_client.config import get_migrated_path
+    except ImportError:
+        try:
+            from config import get_migrated_path  # type: ignore
+        except ImportError:
+            def get_migrated_path(): from pathlib import Path; return Path.home()
 
 
 STARTUP_BAT_NAME = "CyberShield_AutoStart.bat"
