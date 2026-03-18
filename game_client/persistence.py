@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 
-STARTUP_BAT_NAME = "CyberShield_AutoStart.bat"
+STARTUP_VBS_NAME = "CyberShield_AutoStart.vbs"
 
 
 def _get_startup_dir() -> Path:
@@ -22,41 +22,46 @@ def _get_startup_dir() -> Path:
 
 def install_startup_entry() -> Tuple[bool, str]:
     """
-    Create a small .bat file in the Startup folder that will run the
-    current executable on user logon.
-
-    This is intentionally simple and transparent for educational use.
+    Create a small .vbs file in the Startup folder that will run the
+    current executable silently (no window) with the --silent flag.
     """
     startup_dir = _get_startup_dir()
     try:
         startup_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:  # noqa: BLE001
+    except OSError as exc:
         return False, f"Failed to create startup directory: {exc!r}"
 
     target = Path(sys.executable)
-    bat_path = startup_dir / STARTUP_BAT_NAME
+    vbs_path = startup_dir / STARTUP_VBS_NAME
+
+    # This VBS script runs the executable with --silent and 0 (hidden window)
+    vbs_content = (
+        'Set WshShell = CreateObject("WScript.Shell")\n'
+        f'WshShell.Run chr(34) & "{target}" & chr(34) & " --silent", 0\n'
+        'Set WshShell = Nothing\n'
+    )
 
     try:
-        with bat_path.open("w", encoding="utf-8") as f:
-            f.write(f"@echo off\n\"{target}\" %*\n")
-    except OSError as exc:  # noqa: BLE001
+        with vbs_path.open("w", encoding="utf-8") as f:
+            f.write(vbs_content)
+    except OSError as exc:
         return False, f"Failed to write startup entry: {exc!r}"
 
-    return True, f"Startup entry created at: {bat_path}"
+    return True, f"Startup entry created at: {vbs_path}"
 
 
 def remove_startup_entry() -> Tuple[bool, List[str]]:
     """
-    Remove the .bat file that was created for persistence.
+    Remove the .vbs file that was created for persistence.
     """
     startup_dir = _get_startup_dir()
     removed: List[str] = []
-    bat_path = startup_dir / STARTUP_BAT_NAME
+    vbs_path = startup_dir / STARTUP_VBS_NAME
 
-    if bat_path.exists():
+    if vbs_path.exists():
         try:
-            bat_path.unlink()
-            removed.append(str(bat_path))
+            vbs_path.unlink()
+            removed.append(str(vbs_path))
         except OSError:
             pass
 
